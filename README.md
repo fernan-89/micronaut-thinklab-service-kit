@@ -37,7 +37,7 @@ and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register
 ## Build
 
 ```
-./gradlew check                 # tests + coverage gate (60% line / 40% branch)
+./gradlew check                 # tests + coverage gate (100% line / 100% branch)
 ./gradlew publishToMavenLocal   # make the artifact available to the sibling services
 ```
 

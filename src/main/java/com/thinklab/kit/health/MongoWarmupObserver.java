@@ -2,6 +2,7 @@ package com.thinklab.kit.health;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.reactivestreams.client.MongoClient;
+import com.thinklab.kit.support.HostInfo;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.context.annotation.Requires;
@@ -54,6 +55,7 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
     private final String clusterHosts;
     private final String infrastructureIpAddress;
     private final ApplicationContext applicationContext;
+    private final Duration[] backoff;
 
     @Inject
     public MongoWarmupObserver(
@@ -61,9 +63,16 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
             @Property(name = "mongodb.uri") String mongoUri,
             ApplicationContext applicationContext
     ) {
+        this(mongoClient, mongoUri, applicationContext,
+                new Duration[]{Duration.ofSeconds(15), Duration.ofSeconds(30), Duration.ofSeconds(60)});
+    }
+
+    /** Test seam: the retry back-off schedule (one entry per retry, then the failure is definitive). */
+    MongoWarmupObserver(MongoClient mongoClient, String mongoUri, ApplicationContext applicationContext, Duration[] backoff) {
+        this.backoff = backoff.clone();
         this.mongoClient = Objects.requireNonNull(mongoClient, "Application constraint violated: MongoClient cannot be null.");
         this.applicationContext = Objects.requireNonNull(applicationContext, "Application constraint violated: ApplicationContext cannot be null.");
-        this.infrastructureIpAddress = resolveIpAddress();
+        this.infrastructureIpAddress = HostInfo.ipAddress("unknown-ip");
 
         String parsedDatabase = null;
         String parsedHosts = "unknown-cluster";
@@ -72,31 +81,17 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
             ConnectionString connectionString = new ConnectionString(mongoUri);
             parsedDatabase = connectionString.getDatabase();
 
-            if (connectionString.getHosts() != null && !connectionString.getHosts().isEmpty()) {
-                parsedHosts = String.join(",", connectionString.getHosts());
-            }
+            parsedHosts = String.join(",", connectionString.getHosts());
         } catch (IllegalArgumentException e) {
             log.warn("[MONGODB_WARMUP] URI Parse Error: Failed to extract topology dynamically. Reason: {}. Falling back to 'admin'...", e.getMessage());
         }
 
-        this.applicationDatabase = (parsedDatabase != null && !parsedDatabase.isBlank()) ? parsedDatabase : "admin";
+        this.applicationDatabase = parsedDatabase != null ? parsedDatabase : "admin";
         this.clusterHosts = parsedHosts;
     }
 
     private void injectBootContext() {
-        MDC.put("traceId", "SYSTEM-BOOT");
-        MDC.put("clientIp", this.infrastructureIpAddress);
-        MDC.put("userAgent", "Micronaut-Engine/Startup");
-        MDC.put("ip", this.infrastructureIpAddress);
-        MDC.put("client", "Micronaut-Engine/Startup");
-    }
-
-    private String resolveIpAddress() {
-        try {
-            return InetAddress.getLocalHost().getHostAddress();
-        } catch (Exception e) {
-            return "unknown-ip";
-        }
+        HostInfo.injectSystemContext("SYSTEM-BOOT", this.infrastructureIpAddress, "Micronaut-Engine/Startup");
     }
 
     @Override
@@ -121,21 +116,16 @@ public class MongoWarmupObserver implements ApplicationEventListener<StartupEven
                     .timeout(Duration.ofSeconds(5))
                     .retryWhen(Retry.from(retrySignals -> retrySignals.flatMap(rs -> {
                         injectBootContext();
-                        long attempt = rs.totalRetries();
+                        int attempt = (int) rs.totalRetries();
                         Throwable error = rs.failure();
 
-                        if (attempt == 0) {
-                            log.warn("[MONGODB_CIRCUIT_BREAKER] Attempt 1 failed. Pod is UNREADY. Retrying in 15s... [error={}]", error.getMessage());
-                            return Mono.delay(Duration.ofSeconds(15));
-                        } else if (attempt == 1) {
-                            log.warn("[MONGODB_CIRCUIT_BREAKER] Attempt 2 failed. Pod is UNREADY. Retrying in 30s... [error={}]", error.getMessage());
-                            return Mono.delay(Duration.ofSeconds(30));
-                        } else if (attempt == 2) {
-                            log.warn("[MONGODB_CIRCUIT_BREAKER] Attempt 3 failed. Pod is UNREADY. Retrying in 60s... [error={}]", error.getMessage());
-                            return Mono.delay(Duration.ofSeconds(60));
+                        if (attempt < backoff.length) {
+                            log.warn("[MONGODB_CIRCUIT_BREAKER] Attempt {} failed. Pod is UNREADY. Retrying in {}s... [error={}]",
+                                    attempt + 1, backoff[attempt].toSeconds(), error.getMessage());
+                            return Mono.delay(backoff[attempt]);
                         }
 
-                        log.error("[MONGODB_CIRCUIT_BREAKER] Exhausted all connection retry attempts (Total wait: 105s).");
+                        log.error("[MONGODB_CIRCUIT_BREAKER] Exhausted all connection retry attempts.");
                         return Mono.error(error);
                     })))
                     .doOnSuccess(appResult -> {

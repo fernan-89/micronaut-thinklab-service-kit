@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.1.0'
+version = '0.1.1'
 
 java {
     toolchain {
@@ -116,8 +116,8 @@ tasks.named('jacocoTestCoverageVerification') {
     dependsOn tasks.named('test')
     violationRules {
         rule {
-            limit { counter = 'LINE';   value = 'COVEREDRATIO'; minimum = 0.60 }
-            limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 0.40 }
+            limit { counter = 'LINE';   value = 'COVEREDRATIO'; minimum = 1.00 }
+            limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 1.00 }
         }
     }
     classDirectories.setFrom(tasks.named('jacocoTestReport').get().classDirectories)

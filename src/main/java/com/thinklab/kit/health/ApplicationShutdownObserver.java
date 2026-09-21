@@ -4,9 +4,8 @@ import io.micronaut.context.event.ApplicationEventListener;
 import io.micronaut.context.event.ShutdownEvent;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 
-import java.net.InetAddress;
+import com.thinklab.kit.support.HostInfo;
 import java.util.Objects;
 
 /**
@@ -28,7 +27,7 @@ public class ApplicationShutdownObserver implements ApplicationEventListener<Shu
     private final String infrastructureIpAddress;
 
     public ApplicationShutdownObserver() {
-        this.infrastructureIpAddress = resolveIpAddress();
+        this.infrastructureIpAddress = HostInfo.ipAddress("127.0.0.1");
     }
 
     @Override
@@ -41,18 +40,7 @@ public class ApplicationShutdownObserver implements ApplicationEventListener<Shu
     }
 
     private void injectShutdownContext() {
-        MDC.put("traceId", "SYSTEM-SHUTDOWN");
-        MDC.put("clientIp", this.infrastructureIpAddress);
-        MDC.put("userAgent", "Micronaut-Engine/Shutdown");
-        MDC.put("ip", this.infrastructureIpAddress);
-        MDC.put("client", "Micronaut-Engine/Shutdown");
+        HostInfo.injectSystemContext("SYSTEM-SHUTDOWN", this.infrastructureIpAddress, "Micronaut-Engine/Shutdown");
     }
 
-    private String resolveIpAddress() {
-        try {
-            return InetAddress.getLocalHost().getHostAddress();
-        } catch (Exception e) {
-            return "127.0.0.1";
-        }
-    }
 }

@@ -17,6 +17,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.context.Context;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.UUID;
 
 /**
@@ -151,20 +152,23 @@ public class TraceIdFilter implements HttpServerFilter {
     }
 
     private String resolveExternalHost(String clientIp) {
-        if (clientIp == null || clientIp.equals("127.0.0.1") || clientIp.equals("0.0.0.0") || clientIp.startsWith("192.168.") || clientIp.startsWith("10.")) {
+        if (clientIp.equals("127.0.0.1") || clientIp.equals("0.0.0.0") || clientIp.startsWith("192.168.") || clientIp.startsWith("10.")) {
             return "local-mesh-client";
         }
         try {
-            InetAddress inetAddress = InetAddress.getByName(clientIp);
-            String hostName = inetAddress.getHostName();
-            return (hostName != null && !hostName.isBlank()) ? hostName : clientIp;
+            return reverseLookup(clientIp);
         } catch (Exception e) {
             return clientIp;
         }
     }
 
+    /** Test seam: the blocking reverse-DNS call. */
+    String reverseLookup(String clientIp) throws UnknownHostException {
+        return InetAddress.getByName(clientIp).getHostName();
+    }
+
     private String obfuscateIp(String ip) {
-        if (ip == null || ip.isBlank()) return "UNKNOWN";
+        if (ip.isBlank()) return "UNKNOWN";
 
         if (ip.contains(".")) {
             int lastDotIndex = ip.lastIndexOf('.');

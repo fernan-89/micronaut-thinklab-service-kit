@@ -1,5 +1,6 @@
 package com.thinklab.kit.health;
 
+import com.thinklab.kit.support.HostInfo;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.event.ApplicationEventListener;
@@ -55,22 +56,26 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
+    private final Duration warmupTimeout;
+
     @Inject
     public ExternalEndpointsHealthIndicator(
             @Nullable @Property(name = "warmup.endpoints") Map<String, String> targetEndpoints
     ) {
+        this(targetEndpoints, Duration.ofSeconds(10));
+    }
+
+    /** Test seam: how long the startup barrier may block. */
+    ExternalEndpointsHealthIndicator(Map<String, String> targetEndpoints, Duration warmupTimeout) {
+        this.warmupTimeout = warmupTimeout;
         this.targetEndpoints = targetEndpoints != null ? targetEndpoints : Map.of();
-        this.infrastructureHostname = resolveHostname();
-        this.infrastructureIpAddress = resolveIpAddress();
-        this.executionEnvironment = resolveExecutionEnvironment();
+        this.infrastructureHostname = HostInfo.hostname();
+        this.infrastructureIpAddress = HostInfo.ipAddress("unknown-ip");
+        this.executionEnvironment = HostInfo.executionEnvironment();
     }
 
     private void injectBootContext() {
-        MDC.put("traceId", "SYSTEM-BOOT");
-        MDC.put("clientIp", this.infrastructureIpAddress);
-        MDC.put("userAgent", "Micronaut-Engine/Startup");
-        MDC.put("ip", this.infrastructureIpAddress);
-        MDC.put("client", "Micronaut-Engine/Startup");
+        HostInfo.injectSystemContext("SYSTEM-BOOT", this.infrastructureIpAddress, "Micronaut-Engine/Startup");
     }
 
     @Override
@@ -79,7 +84,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
 
         injectBootContext();
 
-        if (targetEndpoints == null || targetEndpoints.isEmpty()) {
+        if (targetEndpoints.isEmpty()) {
             log.info("[EXTERNAL_HEALTH_WARMUP] - No external targets configured. Skipping warmup phase.");
             return;
         }
@@ -96,7 +101,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                         injectBootContext();
                         log.info("[EXTERNAL_HEALTH_WARMUP] - Warmup state: [{}] -> {}", entry.getKey(), entry.getValue());
                     })
-                    .blockLast(Duration.ofSeconds(10));
+                    .blockLast(warmupTimeout);
         } catch (Exception e) {
             log.warn("[EXTERNAL_HEALTH_WARMUP] Warmup barrier interrupted or timed out. Reason: {}", e.getMessage());
         } finally {
@@ -106,7 +111,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
 
     @Override
     public Publisher<HealthResult> getResult() {
-        if (targetEndpoints == null || targetEndpoints.isEmpty()) {
+        if (targetEndpoints.isEmpty()) {
             return Mono.just(HealthResult.builder("external-endpoints")
                     .status(HealthStatus.UP)
                     .details(Map.of(
@@ -151,7 +156,7 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
 
         return Mono.fromFuture(httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding()))
                 .map(response -> {
-                    boolean isUp = response.statusCode() >= 200 && response.statusCode() < 400;
+                    boolean isUp = response.statusCode() < 400;
                     String statusMessage = isUp ? "UP" : "DOWN (HTTP " + response.statusCode() + ")";
                     return (Map.Entry<String, String>) Map.entry(alias, statusMessage);
                 })
@@ -162,39 +167,4 @@ public class ExternalEndpointsHealthIndicator implements HealthIndicator, Applic
                 });
     }
 
-    private String resolveExecutionEnvironment() {
-        String osName = System.getProperty("os.name", "Unknown OS");
-        String osArch = System.getProperty("os.arch", "Unknown Arch");
-        String osContext = String.format("(%s %s)", osName, osArch);
-        try {
-            boolean isKubernetes = System.getenv("KUBERNETES_SERVICE_HOST") != null;
-            boolean isDocker = new File("/.dockerenv").exists() || new File("/run/.containerenv").exists();
-
-            if (isKubernetes) return "Kubernetes Pod " + osContext;
-            else if (isDocker) return "Docker Container " + osContext;
-            else return "Bare-Metal / Local OS " + osContext;
-        } catch (SecurityException e) {
-            return "Restricted Environment " + osContext;
-        }
-    }
-
-    private String resolveHostname() {
-        String envHost = System.getenv("HOSTNAME");
-        if (envHost != null && !envHost.isBlank()) return envHost;
-        String winHost = System.getenv("COMPUTERNAME");
-        if (winHost != null && !winHost.isBlank()) return winHost;
-        try {
-            return InetAddress.getLocalHost().getHostName();
-        } catch (Exception e) {
-            return "unknown-host";
-        }
-    }
-
-    private String resolveIpAddress() {
-        try {
-            return InetAddress.getLocalHost().getHostAddress();
-        } catch (Exception e) {
-            return "unknown-ip";
-        }
-    }
 }

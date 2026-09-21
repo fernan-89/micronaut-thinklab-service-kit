@@ -37,6 +37,15 @@ class ExternalEndpointsHealthIndicatorTest {
             exchange.sendResponseHeaders(500, -1);
             exchange.close();
         });
+        server.createContext("/slow", exchange -> {
+            try {
+                Thread.sleep(400);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -116,5 +125,12 @@ class ExternalEndpointsHealthIndicatorTest {
     @DisplayName("the startup warmup rejects a null event")
     void startupNull() {
         assertThrows(NullPointerException.class, () -> new ExternalEndpointsHealthIndicator(null).onApplicationEvent(null));
+    }
+
+    @Test
+    @DisplayName("a warm-up that outlives its barrier is abandoned without failing startup")
+    void startupWarmupTimeout() {
+        new ExternalEndpointsHealthIndicator(Map.of("slow", baseUrl + "/slow"), java.time.Duration.ofMillis(30))
+                .onApplicationEvent(mock(StartupEvent.class));
     }
 }

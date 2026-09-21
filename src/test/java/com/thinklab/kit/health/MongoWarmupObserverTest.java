@@ -11,6 +11,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -70,6 +74,33 @@ class MongoWarmupObserverTest {
         new MongoWarmupObserver(client, "not-a-mongo-uri", context).onApplicationEvent(event);
 
         verify(context, never()).stop();
+    }
+
+    @Test
+    @DisplayName("every retry back-off is exhausted, then the context is stopped and the failure is contained")
+    void warmupFailureStopsContext() {
+        AtomicInteger subscriptions = new AtomicInteger();
+        when(admin.runCommand(any(Bson.class))).thenReturn(Mono.defer(() -> {
+            subscriptions.incrementAndGet();
+            return Mono.error(new IllegalStateException("cluster down"));
+        }));
+
+        new MongoWarmupObserver(client, "mongodb://localhost:27017/thinklab", context,
+                new Duration[]{Duration.ofMillis(1), Duration.ofMillis(1)}).onApplicationEvent(event);
+
+        assertEquals(3, subscriptions.get());
+        verify(context).stop();
+    }
+
+    @Test
+    @DisplayName("an application-database failure after a healthy admin ping also stops the context")
+    void appDatabaseFailure() {
+        when(admin.runCommand(any(Bson.class))).thenReturn(Mono.just(new Document("ok", 1)));
+        when(app.runCommand(any(Bson.class))).thenReturn(Mono.error(new IllegalStateException("no rbac")));
+
+        new MongoWarmupObserver(client, "mongodb://localhost:27017/thinklab", context, new Duration[0]).onApplicationEvent(event);
+
+        verify(context).stop();
     }
 
     @Test

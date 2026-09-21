@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.1.1'
+version = '0.2.0'
 
 java {
     toolchain {
@@ -27,6 +27,7 @@ dependencies {
     api                 'io.micronaut:micronaut-management'
     api                 'io.micronaut:micronaut-http-client'
     api                 'io.projectreactor:reactor-core'
+    api                 'com.nimbusds:nimbus-jose-jwt:9.40'
     compileOnly         'io.micronaut.mongodb:micronaut-mongo-reactive'
     compileOnly         'org.mongodb:mongodb-driver-reactivestreams'
     implementation      'org.slf4j:slf4j-api'
@@ -39,6 +40,10 @@ dependencies {
     testImplementation  'org.junit.jupiter:junit-jupiter-api'
     testRuntimeOnly     'org.junit.jupiter:junit-jupiter-engine'
     testImplementation  'io.projectreactor:reactor-test'
+    testImplementation  'io.micronaut:micronaut-http-server-netty'
+    testImplementation  'io.micronaut.serde:micronaut-serde-jackson'
+    testAnnotationProcessor 'io.micronaut.serde:micronaut-serde-processor'
+    testAnnotationProcessor 'io.micronaut:micronaut-inject-java'
     testImplementation  'org.mockito:mockito-core'
     testImplementation  'org.mockito:mockito-junit-jupiter'
     testRuntimeOnly     'org.junit.platform:junit-platform-launcher'

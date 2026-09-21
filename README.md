@@ -44,6 +44,13 @@ and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register
 Publishing to GitHub Packages runs from CI on a `v*` tag. The consuming repositories must be granted read
 access under **Package settings -> Manage Actions access** the first time.
 
+## Security (0.2.0)
+
+Set `thinklab.security.enabled=true` and `thinklab.security.secret` (>= 32 bytes) to turn on `SecurityFilter`: bearer JWT (HS256, pinned algorithm)
+required outside `thinklab.security.public-paths`, role based method authorisation (`Role`), and `X-Tenant-Id` / `X-Executor`
+derived from the token (a conflicting tenant header is 403; `SERVICE` tokens act for any tenant). `JwtService` also issues tokens
+(used by the authentication service). Errors: `ERR-AUTH-00401` / `ERR-AUTH-00403`.
+
 ## Versioning
 
 Semantic versioning. A behaviour change in a shared class ships as a new version that each service adopts

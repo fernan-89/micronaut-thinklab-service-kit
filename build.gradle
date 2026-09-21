@@ -1,0 +1,128 @@
+plugins {
+    id 'io.micronaut.library' version '4.4.2'
+    id 'maven-publish'
+    id 'jacoco'
+}
+
+group   = 'com.thinklab'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    withSourcesJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+    compileOnly         'org.projectlombok:lombok:1.18.36'
+
+    // Every dependency is `api`/`compileOnly` so a consuming service decides the runtime. The kit only
+    // declares what its public types expose.
+    api                 'io.micronaut:micronaut-management'
+    api                 'io.micronaut:micronaut-http-client'
+    api                 'io.projectreactor:reactor-core'
+    compileOnly         'io.micronaut.mongodb:micronaut-mongo-reactive'
+    compileOnly         'org.mongodb:mongodb-driver-reactivestreams'
+    implementation      'org.slf4j:slf4j-api'
+
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
+    testCompileOnly     'org.projectlombok:lombok:1.18.36'
+    testImplementation  'io.micronaut.mongodb:micronaut-mongo-reactive'
+    testImplementation  'org.mongodb:mongodb-driver-reactivestreams'
+    testImplementation  'io.micronaut.test:micronaut-test-junit5'
+    testImplementation  'org.junit.jupiter:junit-jupiter-api'
+    testRuntimeOnly     'org.junit.jupiter:junit-jupiter-engine'
+    testImplementation  'io.projectreactor:reactor-test'
+    testImplementation  'org.mockito:mockito-core'
+    testImplementation  'org.mockito:mockito-junit-jupiter'
+    testRuntimeOnly     'org.junit.platform:junit-platform-launcher'
+    testRuntimeOnly     'ch.qos.logback:logback-classic'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.compilerArgs << '-parameters' << '-Xlint:unchecked' << '-Xlint:deprecation'
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    systemProperty "net.bytebuddy.experimental", "true"
+    testLogging {
+        events "failed"
+        exceptionFormat 'full'
+    }
+}
+
+micronaut {
+    version "4.4.2"
+    testRuntime("junit5")
+    processing {
+        incremental(true)
+        annotations("com.thinklab.*")
+    }
+}
+
+publishing {
+    publications {
+        create('kit', MavenPublication) {
+            from components.java
+            artifactId = 'thinklab-service-kit'
+        }
+    }
+    repositories {
+        // Published by CI with the workflow token; `./gradlew publishToMavenLocal` serves local development.
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/fernan-89/thinklab-service-kit')
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    classDirectories.setFrom(files(classDirectories.files.collect {
+        fileTree(dir: it, exclude: ['**/$*', '**/*$Definition*', '**/*$Introspection*', '**/*$Intercepted*'])
+    }))
+}
+
+tasks.named('test') {
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('test')
+    violationRules {
+        rule {
+            limit { counter = 'LINE';   value = 'COVEREDRATIO'; minimum = 0.60 }
+            limit { counter = 'BRANCH'; value = 'COVEREDRATIO'; minimum = 0.40 }
+        }
+    }
+    classDirectories.setFrom(tasks.named('jacocoTestReport').get().classDirectories)
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
+}

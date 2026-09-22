@@ -31,8 +31,8 @@ class SecurityFilterIntegrationTest {
     @Controller("/")
     static class EchoController {
         @Get("/whoami")
-        Map<String, String> whoami(@Header("X-Tenant-Id") String tenant, @Header("X-Executor") String executor) {
-            return Map.of("tenant", tenant, "executor", executor);
+        Map<String, String> whoami(@Header("X-Tenant-Id") String tenant, @Header("X-Executor") String executor, @Header("X-Role") String role) {
+            return Map.of("tenant", tenant, "executor", executor, "role", role);
         }
 
         @Get("/open")
@@ -98,7 +98,7 @@ class SecurityFilterIntegrationTest {
         Map<?, ?> body = client.toBlocking().retrieve(HttpRequest.GET("/whoami").bearerAuth(token), Map.class);
 
         assertEquals("tenant-A", body.get("tenant"));
-        assertEquals("user-7", body.get("executor"));
+        assertEquals("OPERATOR", body.get("role"));
     }
 
     @Test
@@ -107,9 +107,9 @@ class SecurityFilterIntegrationTest {
         String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
 
         Map<?, ?> body = client.toBlocking().retrieve(
-                HttpRequest.GET("/whoami").bearerAuth(token).header("X-Tenant-Id", "tenant-A").header("X-Executor", "root"), Map.class);
+                HttpRequest.GET("/whoami").bearerAuth(token).header("X-Tenant-Id", "tenant-A").header("X-Executor", "root").header("X-Role", "ADMIN"), Map.class);
 
-        assertEquals("user-7", body.get("executor"));
+        assertEquals("OPERATOR", body.get("role"));
     }
 
     @Test

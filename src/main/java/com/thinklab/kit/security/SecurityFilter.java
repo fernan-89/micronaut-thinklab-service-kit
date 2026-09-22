@@ -31,6 +31,7 @@ import java.util.Map;
  *   <li>the role must allow the HTTP method (403 otherwise);</li>
  *   <li>{@code X-Tenant-Id} and {@code X-Executor} are <b>derived from the token</b>, never trusted from the client:
  *       a conflicting tenant header is rejected (403) and the executor header is overwritten;</li>
+ *   <li>{@code X-Role} carries the verified role so services can apply finer rules (a client-supplied value is overwritten);</li>
  *   <li>a {@link Role#SERVICE} token acts on behalf of any tenant, so it keeps the tenant header it sends.</li>
  * </ul>
  */
@@ -40,6 +41,7 @@ public class SecurityFilter implements HttpServerFilter {
 
     static final String TENANT_HEADER = "X-Tenant-Id";
     static final String EXECUTOR_HEADER = "X-Executor";
+    static final String ROLE_HEADER = "X-Role";
     private static final Logger log = LoggerFactory.getLogger(SecurityFilter.class);
     private static final String BEARER = "bearer ";
 
@@ -84,6 +86,7 @@ public class SecurityFilter implements HttpServerFilter {
         }
 
         MutableHttpRequest<?> derived = request.mutate();
+        derived.getHeaders().set(ROLE_HEADER, principal.role().name());
         if (principal.role() != Role.SERVICE) {
             derived.getHeaders().set(TENANT_HEADER, principal.tenantId());
             derived.getHeaders().set(EXECUTOR_HEADER, principal.subject());

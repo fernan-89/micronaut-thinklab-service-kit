@@ -29,7 +29,7 @@ repositories {
         credentials { username = System.getenv('GITHUB_ACTOR'); password = System.getenv('GITHUB_TOKEN') }
     }
 }
-dependencies { implementation 'com.thinklab:thinklab-service-kit:0.1.0' }
+dependencies { implementation 'com.thinklab:thinklab-service-kit:0.3.0' }
 ```
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
@@ -44,12 +44,24 @@ and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register
 Publishing to GitHub Packages runs from CI on a `v*` tag. The consuming repositories must be granted read
 access under **Package settings -> Manage Actions access** the first time.
 
-## Security (0.2.0)
+## Security (0.3.0)
 
-Set `thinklab.security.enabled=true` and `thinklab.security.secret` (>= 32 bytes) to turn on `SecurityFilter`: bearer JWT (HS256, pinned algorithm)
-required outside `thinklab.security.public-paths`, role based method authorisation (`Role`), and `X-Tenant-Id` / `X-Executor`
-derived from the token (a conflicting tenant header is 403; `SERVICE` tokens act for any tenant). `JwtService` also issues tokens
-(used by the authentication service). Errors: `ERR-AUTH-00401` / `ERR-AUTH-00403`.
+Set `thinklab.security.enabled=true` to turn on `SecurityFilter`: bearer JWT (**ES256**, pinned algorithm, key
+looked up by `kid`) required outside `thinklab.security.public-paths`, role-based method authorisation
+(`Role`), and `X-Tenant-Id` / `X-Executor` / `X-Role` derived from the token (a conflicting tenant header is
+403; `SERVICE` tokens act for any tenant).
+
+The trust model is asymmetric: only the token **issuer** (the authentication service) holds a private key and
+uses `JwtSigner` to mint tokens; every other service only **verifies**, with `JwtVerifier` and `KeyProvider`
+resolving public keys from a static `thinklab.security.public-key` or fetched lazily from
+`thinklab.security.jwks-url`. `LocalKeyStore` is the issuer's own EC P-256 key
+(`thinklab.security.private-key`, a JWK; an ephemeral key is generated when unset — development only).
+`RevocationList` + `RevocationPoller` (`thinklab.security.revocation-url`) let a session be revoked before its
+access token would otherwise expire. `ServiceTokenClientFilter` attaches a service-to-service token obtained
+through `ServiceTokenProvider`; the default `ClientCredentialsTokenProvider` calls the issuer's
+`thinklab.security.token-url` (client id/secret), while the issuer itself replaces that bean with a local
+signer (see the authentication service's `LocalServiceTokenProvider`). Errors: `ERR-AUTH-00401` /
+`ERR-AUTH-00403`.
 
 ## Versioning
 

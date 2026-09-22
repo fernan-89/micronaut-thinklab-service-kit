@@ -25,9 +25,10 @@ class SecurityFilterUnitTest {
     @DisplayName("an immutable request is mutated into a derived copy that carries the token identity")
     void immutableRequestFallback() {
         SecurityProperties properties = new SecurityProperties();
-        properties.setSecret("0123456789abcdef0123456789abcdef");
-        JwtService jwt = new JwtService(properties);
-        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+        LocalKeyStore store = new LocalKeyStore(properties);
+        JwtSigner signer = new JwtSigner(properties, store);
+        JwtVerifier verifier = new JwtVerifier(properties, new KeyProvider(properties, store), new RevocationList());
+        String token = signer.issue("user-7", "tenant-A", Role.OPERATOR, null);
 
         HttpRequest<?> request = mock(HttpRequest.class);
         HttpHeaders headers = mock(HttpHeaders.class);
@@ -42,7 +43,7 @@ class SecurityFilterUnitTest {
         ServerFilterChain chain = mock(ServerFilterChain.class);
         when(chain.proceed(any())).thenReturn(Mono.just(HttpResponse.ok()));
 
-        StepVerifier.create(new SecurityFilter(jwt, properties).doFilter(request, chain))
+        StepVerifier.create(new SecurityFilter(verifier, properties).doFilter(request, chain))
                 .expectNextMatches(response -> response.getStatus().getCode() == 200)
                 .verifyComplete();
 

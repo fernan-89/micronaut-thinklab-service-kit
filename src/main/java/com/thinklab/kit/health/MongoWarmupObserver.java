@@ -47,6 +47,7 @@ import java.util.Objects;
  */
 @Singleton
 @Requires(notEnv = "test")
+@Requires(beans = MongoClient.class)
 @Slf4j
 public class MongoWarmupObserver implements ApplicationEventListener<StartupEvent> {
 

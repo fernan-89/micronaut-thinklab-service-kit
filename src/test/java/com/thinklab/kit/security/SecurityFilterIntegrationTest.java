@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** End-to-end check of the filter against a real Netty server, including the header derivation. */
 @MicronautTest
 @Property(name = "thinklab.security.enabled", value = "true")
-@Property(name = "thinklab.security.secret", value = "0123456789abcdef0123456789abcdef")
 @Property(name = "thinklab.security.public-paths", value = "/open,/health/")
 class SecurityFilterIntegrationTest {
 
@@ -74,7 +73,10 @@ class SecurityFilterIntegrationTest {
     HttpClient client;
 
     @Inject
-    JwtService jwt;
+    JwtSigner signer;
+
+    @Inject
+    RevocationList revocations;
 
     private HttpStatus statusOf(HttpRequest<?> request) {
         try {
@@ -106,7 +108,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("the tenant and executor headers are derived from the token")
     void headersDerivedFromToken() {
-        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+        String token = signer.issue("user-7", "tenant-A", Role.OPERATOR, null);
 
         Map<?, ?> body = client.toBlocking().retrieve(HttpRequest.GET("/whoami").bearerAuth(token), Map.class);
 
@@ -117,7 +119,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("a client-supplied executor cannot impersonate someone else")
     void executorOverwritten() {
-        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+        String token = signer.issue("user-7", "tenant-A", Role.OPERATOR, null);
 
         Map<?, ?> body = client.toBlocking().retrieve(
                 HttpRequest.GET("/whoami").bearerAuth(token).header("X-Tenant-Id", "tenant-A").header("X-Executor", "root").header("X-Role", "ADMIN"), Map.class);
@@ -128,7 +130,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("a conflicting tenant header is 403")
     void tenantMismatch() {
-        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+        String token = signer.issue("user-7", "tenant-A", Role.OPERATOR, null);
 
         HttpClientResponseException ex = assertThrows(HttpClientResponseException.class,
                 () -> client.toBlocking().exchange(HttpRequest.GET("/whoami").bearerAuth(token).header("X-Tenant-Id", "tenant-B")));
@@ -140,7 +142,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("a request body survives the header derivation")
     void bodyIsPreserved() {
-        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+        String token = signer.issue("user-7", "tenant-A", Role.OPERATOR, null);
 
         Map<?, ?> echoed = client.toBlocking().retrieve(
                 HttpRequest.POST("/echo-body", Map.of("name", "srv-01")).bearerAuth(token), Map.class);
@@ -152,7 +154,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("a record body survives the header derivation")
     void recordBodyIsPreserved() {
-        String token = jwt.issue("svc", "platform", Role.SERVICE);
+        String token = signer.issue("svc", "platform", Role.SERVICE, null);
 
         Map<?, ?> echoed = client.toBlocking().retrieve(
                 HttpRequest.POST("/echo-record", "{\"name\":\"srv-02\"}").contentType("application/json").bearerAuth(token), Map.class);
@@ -161,11 +163,22 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    @DisplayName("a revoked session is rejected even though its token has not expired")
+    void revokedSession() {
+        String token = signer.issue("user-9", "tenant-A", Role.OPERATOR, "sess-77");
+        assertEquals(HttpStatus.OK, statusOf(HttpRequest.GET("/whoami").bearerAuth(token)));
+
+        revocations.revoke("sess-77", java.time.Instant.now().plusSeconds(60));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, statusOf(HttpRequest.GET("/whoami").bearerAuth(token)));
+    }
+
+    @Test
     @DisplayName("roles gate the HTTP method")
     void rbac() {
-        String viewer = jwt.issue("v", "t", Role.VIEWER);
-        String operator = jwt.issue("o", "t", Role.OPERATOR);
-        String admin = jwt.issue("a", "t", Role.ADMIN);
+        String viewer = signer.issue("v", "t", Role.VIEWER, null);
+        String operator = signer.issue("o", "t", Role.OPERATOR, null);
+        String admin = signer.issue("a", "t", Role.ADMIN, null);
 
         assertEquals(HttpStatus.FORBIDDEN, statusOf(HttpRequest.POST("/write", "{}").bearerAuth(viewer)));
         assertEquals(HttpStatus.OK, statusOf(HttpRequest.POST("/write", "{}").bearerAuth(operator)));
@@ -176,7 +189,7 @@ class SecurityFilterIntegrationTest {
     @Test
     @DisplayName("a service token keeps the tenant it sends and gets an executor when none is sent")
     void serviceToken() {
-        String service = jwt.issue("hash-client", "platform", Role.SERVICE);
+        String service = signer.issue("hash-client", "platform", Role.SERVICE, null);
 
         Map<?, ?> defaulted = client.toBlocking().retrieve(
                 HttpRequest.GET("/service-echo").bearerAuth(service).header("X-Tenant-Id", "tenant-Z"), Map.class);

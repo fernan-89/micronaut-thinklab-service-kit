@@ -46,12 +46,12 @@ public class SecurityFilter implements HttpServerFilter {
     private static final Logger log = LoggerFactory.getLogger(SecurityFilter.class);
     private static final String BEARER = "bearer ";
 
-    private final JwtService jwtService;
+    private final JwtVerifier jwtVerifier;
     private final SecurityProperties properties;
 
     @Inject
-    public SecurityFilter(JwtService jwtService, SecurityProperties properties) {
-        this.jwtService = jwtService;
+    public SecurityFilter(JwtVerifier jwtVerifier, SecurityProperties properties) {
+        this.jwtVerifier = jwtVerifier;
         this.properties = properties;
     }
 
@@ -69,7 +69,7 @@ public class SecurityFilter implements HttpServerFilter {
 
         AuthenticatedPrincipal principal;
         try {
-            principal = jwtService.verify(bearerToken(request.getHeaders().get(HttpHeaders.AUTHORIZATION)));
+            principal = jwtVerifier.verify(bearerToken(request.getHeaders().get(HttpHeaders.AUTHORIZATION)));
         } catch (AuthenticationFailedException e) {
             log.warn("[ACTION: AUTHENTICATE] [PATH: {}] - Rejected: {}", request.getPath(), e.getMessage());
             return Mono.just(problem(HttpStatus.UNAUTHORIZED, "ERR-AUTH-00401", "Authentication is required: a valid bearer token must be supplied."));

@@ -28,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @Property(name = "thinklab.security.public-paths", value = "/open,/health/")
 class SecurityFilterIntegrationTest {
 
+    @io.micronaut.serde.annotation.Serdeable
+    record Named(String name) {}
+
     @Controller("/")
     static class EchoController {
         @Get("/whoami")
@@ -38,6 +41,11 @@ class SecurityFilterIntegrationTest {
         @Get("/open")
         String open() {
             return "open";
+        }
+
+        @Post("/echo-record")
+        Map<String, String> echoRecord(@io.micronaut.http.annotation.Body Named body) {
+            return Map.of("name", body.name());
         }
 
         @Post("/echo-body")
@@ -139,6 +147,17 @@ class SecurityFilterIntegrationTest {
 
         assertEquals("srv-01", echoed.get("name"));
         assertEquals("tenant-A", echoed.get("tenant"));
+    }
+
+    @Test
+    @DisplayName("a record body survives the header derivation")
+    void recordBodyIsPreserved() {
+        String token = jwt.issue("svc", "platform", Role.SERVICE);
+
+        Map<?, ?> echoed = client.toBlocking().retrieve(
+                HttpRequest.POST("/echo-record", "{\"name\":\"srv-02\"}").contentType("application/json").bearerAuth(token), Map.class);
+
+        assertEquals("srv-02", echoed.get("name"));
     }
 
     @Test

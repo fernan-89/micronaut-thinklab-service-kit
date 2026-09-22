@@ -6,6 +6,7 @@ import io.micronaut.http.HttpHeaders;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
+import io.micronaut.http.MutableHttpHeaders;
 import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.Filter;
@@ -85,16 +86,25 @@ public class SecurityFilter implements HttpServerFilter {
             return Mono.just(problem(HttpStatus.FORBIDDEN, "ERR-AUTH-00403", "The tenant header does not match the authenticated tenant."));
         }
 
-        // Netty server requests are already mutable; mutate() would drop the request body, so it is only a fallback.
-        MutableHttpRequest<?> derived = request instanceof MutableHttpRequest<?> mutable ? mutable : request.mutate();
-        derived.getHeaders().set(ROLE_HEADER, principal.role().name());
-        if (principal.role() != Role.SERVICE) {
-            derived.getHeaders().set(TENANT_HEADER, principal.tenantId());
-            derived.getHeaders().set(EXECUTOR_HEADER, principal.subject());
-        } else if (request.getHeaders().get(EXECUTOR_HEADER) == null) {
-            derived.getHeaders().set(EXECUTOR_HEADER, principal.subject());
+        // Netty server headers are mutable in place. request.mutate() would drop the request body, so it is only
+        // the fallback for a request whose headers are read-only.
+        HttpRequest<?> target = request;
+        MutableHttpHeaders headers;
+        if (request.getHeaders() instanceof MutableHttpHeaders mutableHeaders) {
+            headers = mutableHeaders;
+        } else {
+            MutableHttpRequest<?> derived = request.mutate();
+            headers = derived.getHeaders();
+            target = derived;
         }
-        return chain.proceed(derived);
+        headers.set(ROLE_HEADER, principal.role().name());
+        if (principal.role() != Role.SERVICE) {
+            headers.set(TENANT_HEADER, principal.tenantId());
+            headers.set(EXECUTOR_HEADER, principal.subject());
+        } else if (request.getHeaders().get(EXECUTOR_HEADER) == null) {
+            headers.set(EXECUTOR_HEADER, principal.subject());
+        }
+        return chain.proceed(target);
     }
 
     private boolean isPublic(String path) {

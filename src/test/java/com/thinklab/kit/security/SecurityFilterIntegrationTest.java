@@ -40,6 +40,11 @@ class SecurityFilterIntegrationTest {
             return "open";
         }
 
+        @Post("/echo-body")
+        Map<String, String> echoBody(@io.micronaut.http.annotation.Body Map<String, String> body, @Header("X-Tenant-Id") String tenant) {
+            return Map.of("name", body.get("name"), "tenant", tenant);
+        }
+
         @Post("/write")
         String write() {
             return "written";
@@ -122,6 +127,18 @@ class SecurityFilterIntegrationTest {
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
         assertEquals("ERR-AUTH-00403", ex.getResponse().getBody(Map.class).map(m -> m.get("error_code")).orElse(null));
+    }
+
+    @Test
+    @DisplayName("a request body survives the header derivation")
+    void bodyIsPreserved() {
+        String token = jwt.issue("user-7", "tenant-A", Role.OPERATOR);
+
+        Map<?, ?> echoed = client.toBlocking().retrieve(
+                HttpRequest.POST("/echo-body", Map.of("name", "srv-01")).bearerAuth(token), Map.class);
+
+        assertEquals("srv-01", echoed.get("name"));
+        assertEquals("tenant-A", echoed.get("tenant"));
     }
 
     @Test

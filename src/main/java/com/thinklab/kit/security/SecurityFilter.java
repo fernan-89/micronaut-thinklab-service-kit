@@ -85,7 +85,8 @@ public class SecurityFilter implements HttpServerFilter {
             return Mono.just(problem(HttpStatus.FORBIDDEN, "ERR-AUTH-00403", "The tenant header does not match the authenticated tenant."));
         }
 
-        MutableHttpRequest<?> derived = request.mutate();
+        // Netty server requests are already mutable; mutate() would drop the request body, so it is only a fallback.
+        MutableHttpRequest<?> derived = request instanceof MutableHttpRequest<?> mutable ? mutable : request.mutate();
         derived.getHeaders().set(ROLE_HEADER, principal.role().name());
         if (principal.role() != Role.SERVICE) {
             derived.getHeaders().set(TENANT_HEADER, principal.tenantId());

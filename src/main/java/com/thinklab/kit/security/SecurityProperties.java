@@ -12,6 +12,7 @@ public class SecurityProperties {
     private String secret;
     private String issuer = "thinklab";
     private long ttlSeconds = 3600;
+    private String serviceName = "thinklab-service";
     private List<String> publicPaths = List.of("/health", "/prometheus", "/metrics", "/swagger", "/swagger-ui", "/openapi");
 
     public boolean isEnabled() {
@@ -44,6 +45,14 @@ public class SecurityProperties {
 
     public void setTtlSeconds(long ttlSeconds) {
         this.ttlSeconds = ttlSeconds;
+    }
+
+    public String getServiceName() {
+        return serviceName;
+    }
+
+    public void setServiceName(String serviceName) {
+        this.serviceName = serviceName;
     }
 
     public List<String> getPublicPaths() {

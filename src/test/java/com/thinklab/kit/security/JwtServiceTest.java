@@ -189,12 +189,32 @@ class JwtServiceTest {
     }
 
     @Test
+    @DisplayName("the client filter attaches a SERVICE token named after the calling service")
+    void clientFilter() {
+        SecurityProperties p = properties(SECRET);
+        p.setServiceName("it-asset-registry-service");
+        JwtService jwt = service(p, NOW);
+        io.micronaut.http.MutableHttpRequest<?> request = io.micronaut.http.HttpRequest.GET("/x");
+
+        new ServiceTokenClientFilter(jwt, p).addServiceToken(request);
+
+        String header = request.getHeaders().get("Authorization");
+        AuthenticatedPrincipal principal = jwt.verify(header.substring("Bearer ".length()));
+        assertEquals("it-asset-registry-service", principal.subject());
+        assertEquals("platform", principal.tenantId());
+        assertEquals(Role.SERVICE, principal.role());
+    }
+
+    @Test
     @DisplayName("security properties expose their defaults and setters")
     void properties() {
         SecurityProperties p = new SecurityProperties();
         assertFalse(p.isEnabled());
         assertEquals("thinklab", p.getIssuer());
         assertEquals(3600, p.getTtlSeconds());
+        assertEquals("thinklab-service", p.getServiceName());
+        p.setServiceName("x");
+        assertEquals("x", p.getServiceName());
         assertTrue(p.getPublicPaths().contains("/health"));
         p.setEnabled(true);
         p.setPublicPaths(java.util.List.of("/login"));

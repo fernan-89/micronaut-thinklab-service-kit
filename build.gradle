@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.3.0'
+version = '0.4.0'
 
 java {
     toolchain {
@@ -30,12 +30,14 @@ dependencies {
     api                 'com.nimbusds:nimbus-jose-jwt:9.40'
     compileOnly         'io.micronaut.mongodb:micronaut-mongo-reactive'
     compileOnly         'org.mongodb:mongodb-driver-reactivestreams'
+    compileOnly         'io.nats:jnats:2.26.3'
     implementation      'org.slf4j:slf4j-api'
 
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
     testCompileOnly     'org.projectlombok:lombok:1.18.36'
     testImplementation  'io.micronaut.mongodb:micronaut-mongo-reactive'
     testImplementation  'org.mongodb:mongodb-driver-reactivestreams'
+    testImplementation  'io.nats:jnats:2.26.3'
     testImplementation  'io.micronaut.test:micronaut-test-junit5'
     testImplementation  'org.junit.jupiter:junit-jupiter-api'
     testRuntimeOnly     'org.junit.jupiter:junit-jupiter-engine'
@@ -109,7 +111,9 @@ tasks.named('jacocoTestReport') {
         html.required = true
     }
     classDirectories.setFrom(files(classDirectories.files.collect {
-        fileTree(dir: it, exclude: ['**/$*', '**/*$Definition*', '**/*$Introspection*', '**/*$Intercepted*'])
+        // NatsConnectionFactory is a bootstrap-only class (real Nats.connect(url) needs a live broker) —
+        // same exclusion rationale every service already applies to its own Application.class.
+        fileTree(dir: it, exclude: ['**/$*', '**/*$Definition*', '**/*$Introspection*', '**/*$Intercepted*', '**/NatsConnectionFactory.class'])
     }))
 }
 

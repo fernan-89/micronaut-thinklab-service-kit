@@ -13,6 +13,9 @@ classes, with drift already observed) so it is written, tested and fixed **once*
 | `com.thinklab.kit.health` | `ExternalEndpointsHealthIndicator` | Startup warm-up and readiness probe of `warmup.endpoints.*` dependencies |
 | `com.thinklab.kit.health` | `MongoWarmupObserver` | Startup SDAM warm-up with progressive back-off and fail-fast shutdown |
 | `com.thinklab.kit.health` | `ApplicationShutdownObserver` | Structured teardown telemetry |
+| `com.thinklab.kit.events` | `OutboxStore` / `OutboxMongoStore` | Transactional-outbox storage (generic, Mongo-backed) |
+| `com.thinklab.kit.events` | `EventPublisher` / `NatsEventPublisher` | Publishes a relayed event to NATS JetStream |
+| `com.thinklab.kit.events` | `OutboxRelay` / `NatsStreamInitializer` | Scheduled outbox-to-broker relay; idempotent stream bootstrap |
 
 Beans are discovered automatically (`@Singleton` / `@Filter`); the two health classes are disabled in the
 `test` environment. `MongoWarmupObserver` needs `mongodb.uri` and a reactive `MongoClient` bean, so the
@@ -29,7 +32,7 @@ repositories {
         credentials { username = System.getenv('GITHUB_ACTOR'); password = System.getenv('GITHUB_TOKEN') }
     }
 }
-dependencies { implementation 'com.thinklab:thinklab-service-kit:0.3.0' }
+dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.0' }
 ```
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
@@ -62,6 +65,26 @@ through `ServiceTokenProvider`; the default `ClientCredentialsTokenProvider` cal
 `thinklab.security.token-url` (client id/secret), while the issuer itself replaces that bean with a local
 signer (see the authentication service's `LocalServiceTokenProvider`). Errors: `ERR-AUTH-00401` /
 `ERR-AUTH-00403`.
+
+## Events (0.4.0)
+
+Set `thinklab.events.enabled=true` to turn on the event backbone. A producer appends an `OutboxEvent`
+(via `OutboxStore`, typically the kit's own `OutboxMongoStore`) right after its own aggregate write
+succeeds — there is no distributed transaction (no service runs a MongoDB replica set), so this is a
+best-effort dual write; a failed append is logged and swallowed rather than failing the primary write
+(ADR-003). `OutboxRelay` polls unpublished rows on `thinklab.events.relay-poll` (default `5s`) and
+publishes each one through `EventPublisher` (`NatsEventPublisher` by default) to NATS JetStream, marking
+it published on success and leaving it for the next tick on failure — delivery is at-least-once, so every
+consumer must be idempotent. `NatsStreamInitializer` idempotently creates the stream
+(`thinklab.events.stream-name`, default `THINKLAB_EVENTS`, subjects `thinklab.events.subject-prefix.>`)
+on startup and is deliberately fail-open: an unreachable broker degrades the event backbone, it never
+stops the service. Subscribing to JetStream is not a kit concern yet — with only one consumer
+(`notification-dispatch-service`) it stays hand-written there until a second one justifies a shared
+abstraction.
+
+Requires the `io.nats:jnats` dependency at runtime (the kit only declares it `compileOnly`, same
+philosophy as the Mongo driver) and `mongodb.uri` + a reactive `MongoClient` bean if using
+`OutboxMongoStore`.
 
 ## Versioning
 

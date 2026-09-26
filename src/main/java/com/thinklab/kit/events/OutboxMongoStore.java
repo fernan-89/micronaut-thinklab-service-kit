@@ -64,7 +64,11 @@ public class OutboxMongoStore implements OutboxStore {
     }
 
     private MongoCollection<OutboxEventDocument> getCollection() {
-        return mongoClient.getDatabase(database)
+        return collectionOf(mongoClient);
+    }
+
+    private MongoCollection<OutboxEventDocument> collectionOf(MongoClient client) {
+        return client.getDatabase(database)
                 .getCollection(collectionName, OutboxEventDocument.class)
                 .withCodecRegistry(POJO_CODEC_REGISTRY);
     }
@@ -74,7 +78,7 @@ public class OutboxMongoStore implements OutboxStore {
         Objects.requireNonNull(event, "Infrastructure constraint violated: OutboxEvent cannot be null.");
         OutboxEventDocument document = OutboxEventDocument.fromDomain(event);
         return currentSession()
-                .flatMap(session -> Mono.from(getCollection().insertOne(session, document)))
+                .flatMap(session -> Mono.from(collectionOf(clientOf(session)).insertOne(session, document)))
                 .switchIfEmpty(Mono.defer(() -> Mono.from(getCollection().insertOne(document))))
                 .thenReturn(event);
     }
@@ -95,6 +99,17 @@ public class OutboxMongoStore implements OutboxStore {
         return Mono.deferContextual(context -> connectionOperations.findConnectionStatus(context)
                 .map(status -> Mono.just(status.getConnection()))
                 .orElseGet(Mono::empty));
+    }
+
+    /**
+     * The driver only accepts a session on an operation of the {@link MongoClient} that started it. The
+     * {@code MongoClient} bean is {@code @Refreshable} in micronaut-mongo-reactive, so the proxy injected
+     * here and the one Micronaut Data opened the session with can front different client instances
+     * (found by the Testcontainers integration test: "ClientSession from same MongoClient"). Writing
+     * through the session's own originator always satisfies that rule.
+     */
+    private MongoClient clientOf(ClientSession session) {
+        return session.getOriginator() instanceof MongoClient originator ? originator : mongoClient;
     }
 
     @Override

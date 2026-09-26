@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.4.2'
+version = '0.4.3'
 
 java {
     toolchain {
@@ -55,6 +55,42 @@ dependencies {
     testImplementation  'org.mockito:mockito-junit-jupiter'
     testRuntimeOnly     'org.junit.platform:junit-platform-launcher'
     testRuntimeOnly     'ch.qos.logback:logback-classic'
+}
+
+// Integration tests run the kit against real MongoDB (single-node replica set) and NATS JetStream
+// containers (ADR-004). They live in their own suite so `./gradlew test` and the 100% coverage gate stay
+// Docker-free; `./gradlew check` runs both suites, so CI (which has Docker) always exercises them.
+testing {
+    suites {
+        integrationTest(JvmTestSuite) {
+            useJUnitJupiter()
+            dependencies {
+                implementation project()
+                implementation platform('io.micronaut.platform:micronaut-platform:4.4.2')
+                annotationProcessor platform('io.micronaut.platform:micronaut-platform:4.4.2')
+                implementation platform('org.testcontainers:testcontainers-bom:2.0.5')
+                implementation 'org.testcontainers:testcontainers-junit-jupiter'
+                implementation 'org.testcontainers:testcontainers-mongodb'
+                implementation 'io.micronaut.mongodb:micronaut-mongo-reactive'
+                implementation 'org.mongodb:mongodb-driver-reactivestreams'
+                implementation 'io.micronaut.data:micronaut-data-mongodb'
+                implementation 'io.nats:jnats:2.26.3'
+                implementation 'io.micronaut.test:micronaut-test-junit5'
+                implementation 'io.projectreactor:reactor-test'
+                annotationProcessor 'io.micronaut:micronaut-inject-java'
+                runtimeOnly 'ch.qos.logback:logback-classic'
+            }
+            targets.configureEach {
+                testTask.configure {
+                    shouldRunAfter(tasks.named('test'))
+                    testLogging {
+                        events "passed", "failed"
+                        exceptionFormat 'full'
+                    }
+                }
+            }
+        }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -139,4 +175,5 @@ tasks.named('jacocoTestCoverageVerification') {
 
 tasks.named('check') {
     dependsOn tasks.named('jacocoTestCoverageVerification')
+    dependsOn testing.suites.integrationTest
 }

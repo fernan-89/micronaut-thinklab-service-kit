@@ -37,15 +37,26 @@ dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.2' }
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
 
-## Build
+## Build and test
 
 ```
-./gradlew check                 # tests + coverage gate (100% line / 100% branch)
+./gradlew test                  # unit tests + coverage gate (100% line / 100% branch); no Docker needed
+./gradlew integrationTest       # Testcontainers suite: real MongoDB replica set and NATS JetStream (Docker)
+./gradlew check                 # both suites, as CI runs it
 ./gradlew publishToMavenLocal   # make the artifact available to the sibling services
 ```
 
-Publishing to GitHub Packages runs from CI on a `v*` tag. The consuming repositories must be granted read
-access under **Package settings -> Manage Actions access** the first time.
+The unit suite mocks the Mongo driver and the NATS client and alone carries the coverage gate. The
+integration suite (`src/integrationTest`, [ADR-004](docs/adr/004-integration-tests-with-testcontainers.md))
+runs the event backbone against real infrastructure: the BSON round trip, outbox query semantics, a
+Micronaut Data transaction committing or rolling back an append, stream bootstrap, and the scheduled relay
+publishing to JetStream.
+
+## Releasing
+
+Bump `version` in `build.gradle` in the PR. When it merges, CI publishes that version to GitHub Packages
+and creates the `v<version>` tag and GitHub release. A merge that does not change the version publishes
+nothing. Do not push `v*` tags by hand.
 
 ## Security (0.3.0)
 
@@ -66,7 +77,7 @@ through `ServiceTokenProvider`; the default `ClientCredentialsTokenProvider` cal
 signer (see the authentication service's `LocalServiceTokenProvider`). Errors: `ERR-AUTH-00401` /
 `ERR-AUTH-00403`.
 
-## Events (0.4.0, transactions in 0.4.2)
+## Events (0.4.0, transactions in 0.4.2, fixed in 0.4.3)
 
 Set `thinklab.events.enabled=true` to turn on the event backbone. A producer appends an `OutboxEvent` (via
 `OutboxStore`, typically the kit's own `OutboxMongoStore`) after its own aggregate write. On a platform

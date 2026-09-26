@@ -48,9 +48,9 @@ and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register
 
 The unit suite mocks the Mongo driver and the NATS client and alone carries the coverage gate. The
 integration suite (`src/integrationTest`, [ADR-004](docs/adr/004-integration-tests-with-testcontainers.md))
-runs the event backbone against real infrastructure: the BSON round trip, outbox query semantics, a
-Micronaut Data transaction committing or rolling back an append, stream bootstrap, and the scheduled relay
-publishing to JetStream.
+runs the kit against real infrastructure: the BSON round trip, outbox query semantics, a Micronaut Data
+transaction committing or rolling back an append, stream bootstrap, the scheduled relay publishing to
+JetStream, and the declared MongoDB indexes being created.
 
 ## Releasing
 
@@ -103,6 +103,14 @@ philosophy as the Mongo driver) and `mongodb.uri` + a reactive `MongoClient` bea
 `OutboxMongoStore`. A producer can always inject `OutboxStore` regardless of whether events are enabled:
 `NoopOutboxStore` (`@Secondary`) is the fallback bean when `OutboxMongoStore` is not active, so turning
 the event backbone on or off never changes a use case's constructor.
+
+## MongoDB indexes (0.5.0)
+
+`MongoIndexInitializer` creates, on startup, the indexes each `@MappedEntity` declares with
+`@Indexes`/`@Index`. Micronaut Data MongoDB never creates them itself
+([ADR-005](docs/adr/005-create-declared-mongodb-indexes.md)). It is on by default wherever a `MongoClient`
+and Micronaut Data are present and fails open. Set `thinklab.mongo.create-indexes: false` in unit-test
+contexts that have no MongoDB.
 
 ## Versioning
 

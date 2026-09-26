@@ -42,7 +42,7 @@ import java.util.Objects;
  * Blocks the startup thread until database checks succeed or fail-fast triggers.
  *
  * @author Thinklab Systems Engineering Team
- * @version 2.9.1-NASA-SRE
+ * @version 2.9.1
  * @since 1.0
  */
 @Singleton

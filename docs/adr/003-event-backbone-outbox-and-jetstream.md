@@ -50,6 +50,17 @@ JetStream *subscribing* is different: only one consumer exists today (`notificat
 so a generic subscriber abstraction would be speculative. It stays hand-written in that service until a
 second consumer actually exists.
 
+### A producer can always inject `OutboxStore`, even with events disabled
+`OutboxMongoStore` only exists as a bean when `thinklab.events.enabled=true`. A producing use case,
+though, should not have to change its constructor or add conditional wiring depending on whether events
+happen to be on for a given environment — that would leak the flag into application code far from where
+it is configured. `NoopOutboxStore` is a `@Secondary` fallback bean (always present, always
+lowest-priority) that discards `append` calls and returns empty for reads; Micronaut resolves
+`OutboxMongoStore` in its place automatically whenever events are enabled. This was found live, not
+designed up front: the first integration test run against party-authentication with events disabled
+returned 500 on every request, because `InitiateUserUseCase` requires an `OutboxStore` bean that simply
+did not exist without it.
+
 ### Testability without a live broker
 `Connection`, `JetStream` and `JetStreamManagement` are public interfaces, so every class downstream of
 the literal `Nats.connect(url)` call is unit-tested the same way this platform already tests the Mongo
@@ -83,3 +94,14 @@ consumer track its own acknowledgement floor independently.
   dead-letter subject in v1: a consumer that keeps failing a message exhausts `MaxDeliver` and the message
   is terminated (not retried, not parked anywhere) — see `notification-dispatch-service`'s own ADR-024 for
   the consumer-side consequence of this.
+
+## Addendum (0.4.1) — live-found bug: a package-private nested POJO class breaks the BSON codec
+`OutboxMongoStore.OutboxEventDocument` was originally declared as a package-private nested class with
+only its getters/setters marked `public`. Unit tests passed (Mockito never touches real reflection), but
+the first live write threw `CodecConfigurationException` / `IllegalAccessException`: the BSON
+`PojoCodecProvider` reflects into the getters at runtime, and a `public` method on a non-`public` class is
+not reflectively accessible without the caller calling `setAccessible(true)` first, which this codec does
+not do. The class itself must be `public`, not just its members — the same rule `AssetDocument` already
+followed by being a top-level public class, which is why this class of bug had never surfaced before.
+Fixed in 0.4.1; the earlier 0.4.0 tag is broken for anyone constructing `OutboxMongoStore` and should not
+be adopted.

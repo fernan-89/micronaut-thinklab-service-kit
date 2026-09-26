@@ -32,7 +32,7 @@ repositories {
         credentials { username = System.getenv('GITHUB_ACTOR'); password = System.getenv('GITHUB_TOKEN') }
     }
 }
-dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.0' }
+dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.1' }
 ```
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
@@ -84,7 +84,9 @@ abstraction.
 
 Requires the `io.nats:jnats` dependency at runtime (the kit only declares it `compileOnly`, same
 philosophy as the Mongo driver) and `mongodb.uri` + a reactive `MongoClient` bean if using
-`OutboxMongoStore`.
+`OutboxMongoStore`. A producer can always inject `OutboxStore` regardless of whether events are enabled:
+`NoopOutboxStore` (`@Secondary`) is the fallback bean when `OutboxMongoStore` is not active, so turning
+the event backbone on or off never changes a use case's constructor.
 
 ## Versioning
 

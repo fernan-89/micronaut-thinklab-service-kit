@@ -86,8 +86,11 @@ public class OutboxMongoStore implements OutboxStore {
                 .then();
     }
 
+    // Must be public: the BSON PojoCodecProvider reflects into the getters, and a public method on a
+    // package-private class is not reflectively accessible (found live: IllegalAccessException /
+    // CodecConfigurationException on every outbox append, only surfaced once a real Mongo write ran).
     @Introspected
-    static final class OutboxEventDocument {
+    public static final class OutboxEventDocument {
 
         @BsonId
         private UUID id;

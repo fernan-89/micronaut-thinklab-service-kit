@@ -1,4 +1,4 @@
-package com.thinklab.kit.events;
+package com.thinklab.kit;
 
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -13,11 +13,11 @@ import org.testcontainers.utility.DockerImageName;
  * without it there are no multi-document transactions to test. Testcontainers 2.x makes the replica set
  * opt-in ({@code withReplicaSet()}); the default is a standalone server.
  */
-final class Containers {
+public final class Containers {
 
-    static final MongoDBContainer MONGO = new MongoDBContainer(DockerImageName.parse("mongo:7.0")).withReplicaSet();
+    public static final MongoDBContainer MONGO = new MongoDBContainer(DockerImageName.parse("mongo:7.0")).withReplicaSet();
 
-    static final GenericContainer<?> NATS = new GenericContainer<>(DockerImageName.parse("nats:2.10-alpine"))
+    public static final GenericContainer<?> NATS = new GenericContainer<>(DockerImageName.parse("nats:2.10-alpine"))
             .withCommand("-js")
             .withExposedPorts(4222)
             .waitingFor(Wait.forLogMessage(".*Server is ready.*", 1));
@@ -31,11 +31,11 @@ final class Containers {
     }
 
     /** Replica-set URL pointing at {@code database}; each test class uses its own database. */
-    static String mongoUri(String database) {
+    public static String mongoUri(String database) {
         return MONGO.getReplicaSetUrl(database);
     }
 
-    static String natsUrl() {
+    public static String natsUrl() {
         return "nats://" + NATS.getHost() + ":" + NATS.getMappedPort(4222);
     }
 }

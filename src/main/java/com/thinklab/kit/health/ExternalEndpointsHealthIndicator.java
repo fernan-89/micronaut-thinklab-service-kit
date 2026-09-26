@@ -39,7 +39,7 @@ import java.util.Objects;
  * </ol>
  *
  * @author Thinklab Systems Engineering Team
- * @version 1.7.1-NASA-SRE
+ * @version 1.7.1
  * @since 1.0
  */
 @Singleton

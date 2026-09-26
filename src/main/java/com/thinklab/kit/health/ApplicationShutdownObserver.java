@@ -17,7 +17,7 @@ import java.util.Objects;
  * (e.g., Kubernetes) issue a SIGTERM signal.
  *
  * @author Thinklab Systems Engineering Team
- * @version 1.1.0-NASA-SRE
+ * @version 1.1.0
  * @since 1.0
  */
 @Singleton

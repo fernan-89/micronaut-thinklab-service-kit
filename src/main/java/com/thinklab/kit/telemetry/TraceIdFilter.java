@@ -37,7 +37,7 @@ import java.util.UUID;
  * The client IP address is obfuscated at the last octet (IPv4) or block (IPv6) before logging.
  *
  * @author Thinklab Systems Engineering Team
- * @version 3.5.2-NASA-SRE-PROD-STABLE
+ * @version 3.5.2
  * @since 1.0
  */
 @Singleton

@@ -95,6 +95,53 @@ consumer track its own acknowledgement floor independently.
   is terminated (not retried, not parked anywhere) — see `notification-dispatch-service`'s own ADR-024 for
   the consumer-side consequence of this.
 
+## Addendum (0.4.2) — real multi-document transactions, now that the platform has a replica set
+The "no replica set" premise in Context above is no longer true: `start-local-stack.ps1` now runs `mongod`
+as a single-node replica set (`--replSet thinklab-rs0`, `rs.initiate()`), which is what MongoDB requires
+before it will allow multi-document transactions at all — confirmed live, a single-node set does not even
+elect a PRIMARY without an explicit `rs.initiate()`. This closes the "best-effort outbox" gap the Decision
+section above accepted, for producers willing to opt in.
+
+**`OutboxMongoStore.append` now joins the caller's ambient transaction when one exists, instead of always
+writing standalone.** It takes an additional `@Nullable ReactorConnectionOperations<ClientSession>`
+constructor argument (`io.micronaut.data.connection.reactive`, resolved via a `@Nullable` injection so a
+service without Micronaut Data Mongo on its runtime classpath at all gets `null` and keeps the original,
+unconditional standalone write). `append` looks up the ambient `ConnectionStatus` from the Reactor context
+(`Mono.deferContextual`) and, if the caller opened one, passes that exact `ClientSession` to `insertOne`;
+otherwise it falls back to the pre-0.4.2 standalone write. The type actually needed is
+`io.micronaut.data.connection.reactive.ReactorConnectionOperations<ClientSession>`, not the
+Mongo-specific `MongoReactorConnectionOperations` marker interface its name suggests — the latter carries
+no methods of its own (found live, via `javap`, after the natural-seeming choice failed to compile against
+the method used): the `findConnectionStatus(ContextView)` accessor lives on the generic
+`ReactorConnectionOperations<C>` interface, which the concrete bean also implements.
+
+**The caller opens that ambient session with Micronaut's declarative `@Transactional`
+(`io.micronaut.transaction.annotation.Transactional`)**, on a method whose Mono return type Micronaut
+Data Mongo's reactive transaction manager (`MongoReactiveTransactionManagerFactory`,
+`DefaultMongoReactorTransactionOperations`) already supports out of the box — no extra kit wiring needed
+on that side. `@Transactional` only intercepts calls that cross a bean proxy boundary, so a use case cannot
+just annotate a private method and call it via `this::` (self-invocation bypasses the interceptor
+entirely, the same limitation Spring has); the transactional method needs to live on its own injected
+collaborator. See `micronaut-party-authentication-service`'s `UserCreationWriter` for the first real
+adopter.
+
+**Behavioral change worth calling out explicitly:** a producer that adopts this now gets a real
+all-or-nothing write — if the outbox append fails, the aggregate write it was paired with rolls back too,
+rather than succeeding with the event silently lost (the previous, `Consequences`-documented gap). This
+trades the old "primary write always succeeds, event may be lost" guarantee for "both happen or neither
+does." Adopting it is opt-in per producer (nothing changes for a use case that keeps calling
+`outboxStore.append` outside any `@Transactional` boundary) — evaluate case by case whether atomicity or
+independent-write resilience is the better default for a given aggregate.
+
+**Kit dependency added:** `compileOnly`/`testImplementation` on `io.micronaut.data:micronaut-data-mongodb`
+(only to reference `ReactorConnectionOperations`/`ConnectionStatus` — never bundled into a consumer's
+runtime unless that service already depends on it directly, which every current producer does). This had
+one live-found side effect on the kit's own test suite: merely adding it to `testImplementation` made
+Micronaut Test's `TestTransactionExecutionListener` eagerly resolve every `TransactionOperations` bean at
+context startup for *any* `@MicronautTest` in the module, which broke `SecurityFilterIntegrationTest` (an
+unrelated security-filter test with no `mongodb.uri` at all) — fixed with
+`@MicronautTest(transactional = false)` on that class.
+
 ## Addendum (0.4.1) — live-found bug: a package-private nested POJO class breaks the BSON codec
 `OutboxMongoStore.OutboxEventDocument` was originally declared as a package-private nested class with
 only its getters/setters marked `public`. Unit tests passed (Mockito never touches real reflection), but

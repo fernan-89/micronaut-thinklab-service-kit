@@ -2,10 +2,13 @@ package com.thinklab.kit.events;
 
 import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
+import com.mongodb.reactivestreams.client.ClientSession;
 import com.mongodb.reactivestreams.client.FindPublisher;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
+import io.micronaut.data.connection.ConnectionStatus;
+import io.micronaut.data.connection.reactive.ReactorConnectionOperations;
 import org.bson.BsonObjectId;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
@@ -20,14 +23,17 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +43,7 @@ class OutboxMongoStoreTest {
     @Mock private MongoClient mongoClient;
     @Mock private MongoDatabase mongoDatabase;
     @Mock private MongoCollection<OutboxMongoStore.OutboxEventDocument> mongoCollection;
+    @Mock private ReactorConnectionOperations<ClientSession> connectionOperations;
 
     private OutboxMongoStore store;
 
@@ -47,18 +54,52 @@ class OutboxMongoStoreTest {
         lenient().when(mongoCollection.withCodecRegistry(any())).thenReturn(mongoCollection);
 
         EventsProperties properties = new EventsProperties();
-        store = new OutboxMongoStore(mongoClient, "mongodb://localhost:27017/thinklab_events_test_db", properties);
+        store = new OutboxMongoStore(mongoClient, "mongodb://localhost:27017/thinklab_events_test_db", properties, connectionOperations);
     }
 
     @Test
-    @DisplayName("append inserts the document and returns the event")
+    @DisplayName("append inserts the document and returns the event when no ambient transaction exists")
     void append() {
+        lenient().when(connectionOperations.findConnectionStatus(any())).thenReturn(Optional.empty());
         when(mongoCollection.insertOne(any(OutboxMongoStore.OutboxEventDocument.class)))
                 .thenReturn(Mono.just(InsertOneResult.acknowledged(new BsonObjectId(new ObjectId()))));
 
         OutboxEvent event = OutboxEvent.newEvent("thinklab.party-authentication.user.initiated", "{}");
 
         StepVerifier.create(store.append(event))
+                .expectNext(event)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("append joins the caller's ambient session when a @Transactional boundary already opened one")
+    void appendJoinsAmbientSession() {
+        ClientSession session = mock(ClientSession.class);
+        ConnectionStatus<ClientSession> status = mock(ConnectionStatus.class);
+        when(status.getConnection()).thenReturn(session);
+        when(connectionOperations.findConnectionStatus(any())).thenReturn(Optional.of(status));
+        when(mongoCollection.insertOne(eq(session), any(OutboxMongoStore.OutboxEventDocument.class)))
+                .thenReturn(Mono.just(InsertOneResult.acknowledged(new BsonObjectId(new ObjectId()))));
+
+        OutboxEvent event = OutboxEvent.newEvent("thinklab.party-authentication.user.initiated", "{}");
+
+        StepVerifier.create(store.append(event))
+                .expectNext(event)
+                .verifyComplete();
+        verify(mongoCollection).insertOne(eq(session), any(OutboxMongoStore.OutboxEventDocument.class));
+    }
+
+    @Test
+    @DisplayName("append falls back to a standalone write when the service has no Micronaut Data Mongo at all")
+    void appendWithoutConnectionOperationsBean() {
+        OutboxMongoStore storeWithoutConnectionOperations =
+                new OutboxMongoStore(mongoClient, "mongodb://localhost:27017/thinklab_events_test_db", new EventsProperties(), null);
+        when(mongoCollection.insertOne(any(OutboxMongoStore.OutboxEventDocument.class)))
+                .thenReturn(Mono.just(InsertOneResult.acknowledged(new BsonObjectId(new ObjectId()))));
+
+        OutboxEvent event = OutboxEvent.newEvent("thinklab.party-authentication.user.initiated", "{}");
+
+        StepVerifier.create(storeWithoutConnectionOperations.append(event))
                 .expectNext(event)
                 .verifyComplete();
     }
@@ -110,9 +151,9 @@ class OutboxMongoStoreTest {
     @DisplayName("mandatory collaborators and arguments are null-checked")
     void nullGuards() {
         EventsProperties properties = new EventsProperties();
-        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(null, "mongodb://h/db", properties));
-        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(mongoClient, "mongodb://h/db", null));
-        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(mongoClient, null, properties));
+        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(null, "mongodb://h/db", properties, connectionOperations));
+        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(mongoClient, "mongodb://h/db", null, connectionOperations));
+        assertThrows(NullPointerException.class, () -> new OutboxMongoStore(mongoClient, null, properties, connectionOperations));
         assertThrows(NullPointerException.class, () -> store.append(null));
         assertThrows(NullPointerException.class, () -> store.markPublished(null));
     }

@@ -21,8 +21,16 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** End-to-end check of the filter against a real Netty server, including the header derivation. */
-@MicronautTest
+/**
+ * End-to-end check of the filter against a real Netty server, including the header derivation.
+ *
+ * <p>{@code transactional = false}: Micronaut Test otherwise eagerly resolves every
+ * {@code TransactionOperations} bean at context startup to decide whether to wrap the test in a rollback
+ * transaction. Since 0.4.2 added {@code micronaut-data-mongodb} to the test classpath (for
+ * {@code OutboxMongoStoreTest}), that eager lookup found {@code MongoReactiveTransactionManagerFactory} and
+ * failed context startup here — this test has no {@code mongodb.uri} and needs no transaction at all.
+ */
+@MicronautTest(transactional = false)
 @Property(name = "thinklab.security.enabled", value = "true")
 @Property(name = "thinklab.security.public-paths", value = "/open,/health/")
 class SecurityFilterIntegrationTest {

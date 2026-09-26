@@ -5,11 +5,14 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
+import com.mongodb.reactivestreams.client.ClientSession;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.core.annotation.Introspected;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.data.connection.reactive.ReactorConnectionOperations;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.bson.codecs.configuration.CodecRegistries;
@@ -48,13 +51,16 @@ public class OutboxMongoStore implements OutboxStore {
     private final MongoClient mongoClient;
     private final String database;
     private final String collectionName;
+    private final ReactorConnectionOperations<ClientSession> connectionOperations;
 
     @Inject
-    public OutboxMongoStore(MongoClient mongoClient, @Property(name = "mongodb.uri") String mongoUri, EventsProperties properties) {
+    public OutboxMongoStore(MongoClient mongoClient, @Property(name = "mongodb.uri") String mongoUri, EventsProperties properties,
+                             @Nullable ReactorConnectionOperations<ClientSession> connectionOperations) {
         this.mongoClient = Objects.requireNonNull(mongoClient, "Infrastructure constraint violated: MongoClient cannot be null.");
         Objects.requireNonNull(properties, "Infrastructure constraint violated: EventsProperties cannot be null.");
         this.database = new ConnectionString(Objects.requireNonNull(mongoUri, "Infrastructure constraint violated: mongodb.uri cannot be null.")).getDatabase();
         this.collectionName = properties.getOutboxCollection();
+        this.connectionOperations = connectionOperations;
     }
 
     private MongoCollection<OutboxEventDocument> getCollection() {
@@ -66,8 +72,29 @@ public class OutboxMongoStore implements OutboxStore {
     @Override
     public Mono<OutboxEvent> append(OutboxEvent event) {
         Objects.requireNonNull(event, "Infrastructure constraint violated: OutboxEvent cannot be null.");
-        return Mono.from(getCollection().insertOne(OutboxEventDocument.fromDomain(event)))
+        OutboxEventDocument document = OutboxEventDocument.fromDomain(event);
+        return currentSession()
+                .flatMap(session -> Mono.from(getCollection().insertOne(session, document)))
+                .switchIfEmpty(Mono.defer(() -> Mono.from(getCollection().insertOne(document))))
                 .thenReturn(event);
+    }
+
+    /**
+     * If the caller wrapped this append inside a Micronaut Data {@code @Transactional} boundary that
+     * already opened a MongoDB session (kit ADR-003's 0.4.2 addendum: real multi-document transactions,
+     * now that the platform runs MongoDB as a single-node replica set), joins that same session so the
+     * append is part of the same atomic write instead of its own, independent one. No ambient session
+     * (events published outside a transaction, or a service without Micronaut Data Mongo on its runtime
+     * classpath at all — {@code connectionOperations} is then null) falls back to the original standalone
+     * write, unchanged.
+     */
+    private Mono<ClientSession> currentSession() {
+        if (connectionOperations == null) {
+            return Mono.empty();
+        }
+        return Mono.deferContextual(context -> connectionOperations.findConnectionStatus(context)
+                .map(status -> Mono.just(status.getConnection()))
+                .orElseGet(Mono::empty));
     }
 
     @Override

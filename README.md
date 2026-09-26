@@ -32,7 +32,7 @@ repositories {
         credentials { username = System.getenv('GITHUB_ACTOR'); password = System.getenv('GITHUB_TOKEN') }
     }
 }
-dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.1' }
+dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.2' }
 ```
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
@@ -66,13 +66,18 @@ through `ServiceTokenProvider`; the default `ClientCredentialsTokenProvider` cal
 signer (see the authentication service's `LocalServiceTokenProvider`). Errors: `ERR-AUTH-00401` /
 `ERR-AUTH-00403`.
 
-## Events (0.4.0)
+## Events (0.4.0, transactions in 0.4.2)
 
-Set `thinklab.events.enabled=true` to turn on the event backbone. A producer appends an `OutboxEvent`
-(via `OutboxStore`, typically the kit's own `OutboxMongoStore`) right after its own aggregate write
-succeeds — there is no distributed transaction (no service runs a MongoDB replica set), so this is a
-best-effort dual write; a failed append is logged and swallowed rather than failing the primary write
-(ADR-003). `OutboxRelay` polls unpublished rows on `thinklab.events.relay-poll` (default `5s`) and
+Set `thinklab.events.enabled=true` to turn on the event backbone. A producer appends an `OutboxEvent` (via
+`OutboxStore`, typically the kit's own `OutboxMongoStore`) after its own aggregate write. On a platform
+running MongoDB as a replica set (true of the local stack since 2026-09-26), `OutboxMongoStore.append` will
+join an ambient MongoDB session if the caller opened one with `@Transactional` — the aggregate write and
+the outbox append then commit or roll back together, closing the "lost event" gap. This is opt-in per
+producer: a use case that calls `outboxStore.append` outside any `@Transactional` boundary keeps the
+original best-effort behavior (append fails, primary write still stands, failure logged and swallowed).
+See ADR-003's 0.4.2 addendum for the mechanism and the self-invocation gotcha (the `@Transactional` method
+must live on its own injected bean, not a private method called via `this::`).
+`OutboxRelay` polls unpublished rows on `thinklab.events.relay-poll` (default `5s`) and
 publishes each one through `EventPublisher` (`NatsEventPublisher` by default) to NATS JetStream, marking
 it published on success and leaving it for the next tick on failure — delivery is at-least-once, so every
 consumer must be idempotent. `NatsStreamInitializer` idempotently creates the stream

@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.4.1'
+version = '0.4.2'
 
 java {
     toolchain {
@@ -31,12 +31,17 @@ dependencies {
     compileOnly         'io.micronaut.mongodb:micronaut-mongo-reactive'
     compileOnly         'org.mongodb:mongodb-driver-reactivestreams'
     compileOnly         'io.nats:jnats:2.26.3'
+    // Only needed to look up the ambient ClientSession a caller's own @Transactional boundary already
+    // opened (kit ADR-003 addendum, 0.4.2) - OutboxMongoStore degrades to its original standalone write
+    // when this type's bean is absent, so a consuming service without Micronaut Data Mongo is unaffected.
+    compileOnly         'io.micronaut.data:micronaut-data-mongodb'
     implementation      'org.slf4j:slf4j-api'
 
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
     testCompileOnly     'org.projectlombok:lombok:1.18.36'
     testImplementation  'io.micronaut.mongodb:micronaut-mongo-reactive'
     testImplementation  'org.mongodb:mongodb-driver-reactivestreams'
+    testImplementation  'io.micronaut.data:micronaut-data-mongodb'
     testImplementation  'io.nats:jnats:2.26.3'
     testImplementation  'io.micronaut.test:micronaut-test-junit5'
     testImplementation  'org.junit.jupiter:junit-jupiter-api'

@@ -34,6 +34,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -69,6 +70,32 @@ class OutboxMongoStoreTest {
         StepVerifier.create(store.append(event))
                 .expectNext(event)
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("append writes through the client that started the ambient session, not the injected proxy")
+    void appendUsesTheSessionOriginator() {
+        MongoClient originator = mock(MongoClient.class);
+        MongoDatabase originatorDatabase = mock(MongoDatabase.class);
+        MongoCollection<OutboxMongoStore.OutboxEventDocument> originatorCollection = mock(MongoCollection.class);
+        when(originator.getDatabase("thinklab_events_test_db")).thenReturn(originatorDatabase);
+        when(originatorDatabase.getCollection("outbox_events", OutboxMongoStore.OutboxEventDocument.class)).thenReturn(originatorCollection);
+        when(originatorCollection.withCodecRegistry(any())).thenReturn(originatorCollection);
+        ClientSession session = mock(ClientSession.class);
+        when(session.getOriginator()).thenReturn(originator);
+        ConnectionStatus<ClientSession> status = mock(ConnectionStatus.class);
+        when(status.getConnection()).thenReturn(session);
+        when(connectionOperations.findConnectionStatus(any())).thenReturn(Optional.of(status));
+        when(originatorCollection.insertOne(eq(session), any(OutboxMongoStore.OutboxEventDocument.class)))
+                .thenReturn(Mono.just(InsertOneResult.acknowledged(new BsonObjectId(new ObjectId()))));
+
+        OutboxEvent event = OutboxEvent.newEvent("thinklab.party-authentication.user.initiated", "{}");
+
+        StepVerifier.create(store.append(event))
+                .expectNext(event)
+                .verifyComplete();
+        verify(originatorCollection).insertOne(eq(session), any(OutboxMongoStore.OutboxEventDocument.class));
+        verifyNoInteractions(mongoCollection);
     }
 
     @Test

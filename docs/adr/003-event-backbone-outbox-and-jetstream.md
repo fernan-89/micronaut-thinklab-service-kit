@@ -152,3 +152,19 @@ not do. The class itself must be `public`, not just its members — the same rul
 followed by being a top-level public class, which is why this class of bug had never surfaced before.
 Fixed in 0.4.1; the earlier 0.4.0 tag is broken for anyone constructing `OutboxMongoStore` and should not
 be adopted.
+
+## Addendum (0.4.3) — found by the integration suite: the session and the collection came from different clients
+0.4.2's transactional append never worked inside a real Micronaut context: every `append` joined to a
+`@Transactional` boundary failed with `IllegalStateException: state should be: ClientSession from same
+MongoClient`. micronaut-mongo-reactive declares the `MongoClient` bean `@Refreshable`, so each injection
+point receives its own proxy, and the proxy injected into `OutboxMongoStore` fronted a different client
+instance than the one Micronaut Data started the session with. The driver only accepts a session on an
+operation of the client that started it. The unit test could not see this (the session was a mock); the
+first Testcontainers run against a replica set did (ADR-004).
+
+`append` now writes through `session.getOriginator()` when it joins a session, falling back to the injected
+client otherwise. `EventBackboneIT` pins the behaviour: a committed append is stored and relayed, and an
+append inside a boundary that fails is rolled back. 0.4.2 should not be used with events enabled; any
+producer that calls `append` inside `@Transactional` (party-authentication's `UserCreationWriter`) must
+move to 0.4.3.
+

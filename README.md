@@ -58,12 +58,16 @@ Bump `version` in `build.gradle` in the PR. When it merges, CI publishes that ve
 and creates the `v<version>` tag and GitHub release. A merge that does not change the version publishes
 nothing. Do not push `v*` tags by hand.
 
-## Security (0.3.0)
+## Security (0.3.0, `Role.REQUESTER` added in 0.5.1)
 
 Set `thinklab.security.enabled=true` to turn on `SecurityFilter`: bearer JWT (**ES256**, pinned algorithm, key
 looked up by `kid`) required outside `thinklab.security.public-paths`, role-based method authorisation
 (`Role`), and `X-Tenant-Id` / `X-Executor` / `X-Role` derived from the token (a conflicting tenant header is
-403; `SERVICE` tokens act for any tenant).
+403; `SERVICE` tokens act for any tenant). `Role` is deliberately coarse (method-based only): `VIEWER` reads,
+`OPERATOR`/`REQUESTER` read and write but never delete, `ADMIN`/`SERVICE` do everything. `REQUESTER` (Journey 6,
+self-service ticket filing) gets the same method envelope as `OPERATOR` on purpose - resource-level scoping
+("only see your own tickets, never internal notes") is each owning service's job, comparing the token-derived
+`X-Executor` against the resource's own requester id, not this enum's.
 
 The trust model is asymmetric: only the token **issuer** (the authentication service) holds a private key and
 uses `JwtSigner` to mint tokens; every other service only **verifies**, with `JwtVerifier` and `KeyProvider`

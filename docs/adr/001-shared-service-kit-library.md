@@ -24,3 +24,10 @@ applied five times. The blueprint's coverage gap (66-85%) sat almost entirely in
   that were never unit tested), and a single upgrade path for every service.
 - Negative: an extra repository and a publish step; a breaking change in the kit needs a coordinated
   version bump across services.
+
+## Addendum (2026-09-30): repository and artifact renamed
+Both the repository and the local folder were renamed from `thinklab-service-kit` to
+`micronaut-thinklab-service-kit`, matching the `micronaut-<domain>-service` naming convention every other
+repository in the platform already follows (the kit was the one holdout). The Maven coordinate changed to
+match: `com.thinklab:micronaut-thinklab-service-kit`, first published at version 0.6.0. `group` (`com.thinklab`)
+and every Java package (`com.thinklab.kit.*`) are unchanged - only the repository/artifact identity moved.

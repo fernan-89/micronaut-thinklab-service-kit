@@ -5,7 +5,7 @@ plugins {
 }
 
 group   = 'com.thinklab'
-version = '0.5.1'
+version = '0.6.0'
 
 java {
     toolchain {
@@ -125,14 +125,14 @@ publishing {
     publications {
         create('kit', MavenPublication) {
             from components.java
-            artifactId = 'thinklab-service-kit'
+            artifactId = 'micronaut-thinklab-service-kit'
         }
     }
     repositories {
         // Published by CI with the workflow token; `./gradlew publishToMavenLocal` serves local development.
         maven {
             name = 'GitHubPackages'
-            url = uri('https://maven.pkg.github.com/fernan-89/thinklab-service-kit')
+            url = uri('https://maven.pkg.github.com/fernan-89/micronaut-thinklab-service-kit')
             credentials {
                 username = System.getenv('GITHUB_ACTOR')
                 password = System.getenv('GITHUB_TOKEN')

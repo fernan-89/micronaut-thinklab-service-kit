@@ -1,4 +1,4 @@
-# thinklab-service-kit
+# micronaut-thinklab-service-kit
 
 Shared runtime infrastructure for every ThinkLab Micronaut service. It removes the copy-and-paste
 baseline that used to live in each repository (five identical copies of the health and telemetry
@@ -28,11 +28,11 @@ repositories {
     mavenLocal()          // local development: ./gradlew publishToMavenLocal in this repo
     mavenCentral()
     maven {               // CI: GitHub Packages
-        url = uri('https://maven.pkg.github.com/fernan-89/thinklab-service-kit')
+        url = uri('https://maven.pkg.github.com/fernan-89/micronaut-thinklab-service-kit')
         credentials { username = System.getenv('GITHUB_ACTOR'); password = System.getenv('GITHUB_TOKEN') }
     }
 }
-dependencies { implementation 'com.thinklab:thinklab-service-kit:0.4.2' }
+dependencies { implementation 'com.thinklab:micronaut-thinklab-service-kit:0.6.0' }
 ```
 
 and in `Application.main`: `com.thinklab.kit.telemetry.ReactorMdcBridge.register();`.
